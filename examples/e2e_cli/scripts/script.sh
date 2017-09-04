@@ -155,16 +155,11 @@ chaincodeQuery () {
      echo "Attempting to Query PEER$PEER ...$(($(date +%s)-starttime)) secs"
      peer chaincode query -C $CHANNEL_NAME -n mycc -c '{"Args":["readLog","msc_20170613"]}' >&log.txt
   done
-  echo
+  res=$?
   cat log.txt
-  if test $rc -eq 0 ; then
-	echo "===================== Query on PEER$PEER on channel '$CHANNEL_NAME' is successful ===================== "
-  else
-	echo "!!!!!!!!!!!!!!! Query result on PEER$PEER is INVALID !!!!!!!!!!!!!!!!"
-        echo "================== ERROR !!! FAILED to execute End-2-End Scenario =================="
-	echo
-	exit 1
-  fi
+  verifyResult $res "Query execution on PEER$PEER failed "
+  echo "===================== Query on PEER$PEER on channel '$CHANNEL_NAME' is successful ===================== "
+  echo
 }
 
 chaincodeInvoke () {
