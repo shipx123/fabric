@@ -212,6 +212,8 @@ instantiateChaincode 2
 echo "Sending invoke transaction on org1/peer0..."
 chaincodeInvoke 0
 
+sleep 10s
+
 ## Install chaincode on Peer3/Org2
 echo "Installing chaincode on org2/peer3..."
 installChaincode 3
