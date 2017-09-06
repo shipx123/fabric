@@ -203,11 +203,11 @@ installChaincode 2
 echo "Instantiating chaincode on org2/peer2..."
 instantiateChaincode 2
 
+sleep 10s
+
 #Invoke on chaincode on Peer0/Org1
 echo "Sending invoke transaction on org1/peer0..."
 chaincodeInvoke 0
-
-sleep 10s
 
 ## Install chaincode on Peer3/Org2
 echo "Installing chaincode on org2/peer3..."
