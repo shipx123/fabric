@@ -6,7 +6,9 @@ regarding copyright ownership.  The ASF licenses this file
 to you under the Apache License, Version 2.0 (the
 "License"); you may not use this file except in compliance
 with the License.  You may obtain a copy of the License at
+
   http://www.apache.org/licenses/LICENSE-2.0
+
 Unless required by applicable law or agreed to in writing,
 software distributed under the License is distributed on an
 "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -18,14 +20,14 @@ under the License.
 // ====CHAINCODE EXECUTION SAMPLES (CLI) ==================
 
 // ==== Invoke logs ====
-// peer chaincode invoke -C mychannel -n mycc -c '{"Args":["uploadLog","msc_20170613","900150983cd24fb0d6963f7d28e16f72","tom","tom"]}'
+// peer chaincode invoke -C mychannel -n mycc -c '{"Args":["uploadLog","msc_20170613","900150983cd24fb0d6963f7d28e16f72","tom"]}'
 // peer chaincode invoke -C mychannel -n mycc -c '{"Args":["deleteLog","msc_20170613"]}'
 
 // ==== Query logs ====
 // peer chaincode query -C mychannel -n mycc -c '{"Args":["readLog","msc_20170613"]}'
 
 // Rich Query (Only supported if CouchDB is used as state database):
-//   peer chaincode query -C mychannel -n mycc -c '{"Args":["queryLogsByAccount","tom"]}'
+//   peer chaincode query -C mychannel -n mycc -c '{"Args":["queryLogsByUser","tom"]}'
 
 //The following examples demonstrate creating indexes on CouchDB
 //Example hostname:port configurations
@@ -42,7 +44,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"bytes"
 	"time"
 	
@@ -56,9 +57,8 @@ type SimpleChaincode struct {
 
 type log struct {
 	Name           string `json:"name"`    //the fieldtags are needed to keep case from bouncing around
-	Hashvalue      string `json:"hashValue"`
+	Logcontent      string `json:"logContent"`
 	Uploadtime	   string `json:"uploadTime"`
-	Account        string `json:"account"`
 	User           string `json:"user"`
 }
 
@@ -91,8 +91,8 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 		return t.deleteLog(stub, args)
 	} else if function == "readLog" { //read a log
 		return t.readLog(stub, args)
-	} else if function == "queryLogsByAccount" { //find log for account X using rich query
-		return t.queryLogsByAccount(stub, args)
+	} else if function == "queryLogsByUser" { //find log for user X using rich query
+		return t.queryLogsByUser(stub, args)
 	}
 
 	fmt.Println("invoke did not find func: " + function) //error
@@ -105,10 +105,10 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 func (t *SimpleChaincode) uploadLog(stub shim.ChaincodeStubInterface, args []string) pb.Response {
 	var err error
 
-	//        0                          1                     2       3 
-	// "msc_20170613",  "900150983cd24fb0d6963f7d28e16f72",  "tom",  "tom"
-	if len(args) != 4 {
-		return shim.Error("Incorrect number of arguments. Expecting 4")
+	//        0                          1                     2 
+	// "msc_20170613",  "900150983cd24fb0d6963f7d28e16f72",  "tom"
+	if len(args) != 3 {
+		return shim.Error("Incorrect number of arguments. Expecting 3")
 	}
 
 	// ==== Input sanitation ====
@@ -122,15 +122,11 @@ func (t *SimpleChaincode) uploadLog(stub shim.ChaincodeStubInterface, args []str
 	if len(args[2]) <= 0 {
 		return shim.Error("3rd argument must be a non-empty string")
 	}
-	if len(args[3]) <= 0 {
-		return shim.Error("4th argument must be a non-empty string")
-	}
 
 	logName := args[0]
-	hashValue := args[1]
-	account := strings.ToLower(args[2])
-	user := strings.ToLower(args[3])
-    	
+	logContent := args[1]
+	user := args[2]
+	
 	// ==== Check if log already exists ====
 	logAsBytes, err := stub.GetState(logName)
 	if err != nil {
@@ -145,13 +141,13 @@ func (t *SimpleChaincode) uploadLog(stub shim.ChaincodeStubInterface, args []str
 	cstTimestamp := utcTimestamp+28800
 	cstNow := time.Unix(cstTimestamp,0)
 	uploadTime := cstNow.Format("2006-01-02 15:04:05")
-	log := &log{logName, hashValue, uploadTime, account, user}
+	log := &log{logName, logContent, uploadTime, user}
 	logJSONasBytes, err := json.Marshal(log)
 	if err != nil {
 		return shim.Error(err.Error())
 	}
 	//Alternatively, build the log json string manually if you don't want to use struct marshalling
-	//logJSONasString := `{"name": "` + logName + `",  "hashValue": "` + hashValue + `",  "time": "` + uploadTime + `",  "account": "` + account + `",  "user": "` + user + `"}`
+	//logJSONasString := `{"name": "` + logName + `",  "logContent": "` + logContent + `",  "time": "` + uploadTime + `",  "user": "` + user + `"}`
 	//logJSONasBytes := []byte(str)
 
 	// === Save log to state ===
@@ -162,17 +158,17 @@ func (t *SimpleChaincode) uploadLog(stub shim.ChaincodeStubInterface, args []str
 
 	//  An 'index' is a normal key/value entry in state.
 	//  The key is a composite key, with the elements that you want to range query on listed first.
-	//  In our case, the composite key is based on indexName~account~name.
-	//  This will enable very efficient state range queries based on composite keys matching indexName~account~*
-	indexName := "account~name"
-	accountNameIndexKey, err := stub.CreateCompositeKey(indexName, []string{log.Account, log.Name})	
+	//  In our case, the composite key is based on indexName~user~name.
+	//  This will enable very efficient state range queries based on composite keys matching indexName~user~*
+	indexName := "user~name"
+	userNameIndexKey, err := stub.CreateCompositeKey(indexName, []string{log.User, log.Name})	
 	if err != nil {
 		return shim.Error(err.Error())
 	}
 	//  Save index entry to state. Only the key name is needed, no need to store a duplicate copy of the log.
 	//  Note - passing a 'nil' value will effectively delete the key from state, therefore we pass null character as value
 	value := []byte{0x00}
-	stub.PutState(accountNameIndexKey, value)
+	stub.PutState(userNameIndexKey, value)
 	fmt.Println("- end upload log")
 	return shim.Success(nil)
 }
@@ -215,12 +211,12 @@ func (t *SimpleChaincode) readLog(stub shim.ChaincodeStubInterface, args []strin
 // ============================================================================================
 
 // ===== Example: Parameterized rich query =================================================
-// queryLogsByAccount queries for logs based on a passed in account.
+// queryLogsByUser queries for logs based on a passed in user.
 // This is an example of a parameterized query where the query logic is baked into the chaincode,
-// and accepting a single query parameter (account).
+// and accepting a single query parameter (user).
 // Only available on state databases that support rich query (e.g. CouchDB)
 // =========================================================================================
-func (t *SimpleChaincode) queryLogsByAccount(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+func (t *SimpleChaincode) queryLogsByUser(stub shim.ChaincodeStubInterface, args []string) pb.Response {
 
 	//   0
 	// "tom"
@@ -228,9 +224,9 @@ func (t *SimpleChaincode) queryLogsByAccount(stub shim.ChaincodeStubInterface, a
 		return shim.Error("Incorrect number of arguments. Expecting 1")
 	}
 
-	account := strings.ToLower(args[0])
+	user := args[0]
 
-	queryString := fmt.Sprintf("{\"selector\":{\"account\":\"%s\"}}", account)
+	queryString := fmt.Sprintf("{\"selector\":{\"user\":\"%s\"}}", user)
 
 	queryResults, err := getQueryResultForQueryString(stub, queryString)
 	if err != nil {
@@ -250,7 +246,6 @@ func (t *SimpleChaincode) deleteLog(stub shim.ChaincodeStubInterface, args []str
 	}
 	logName := args[0]
 
-	// to maintain the color~name index, we need to read the log first and get its color
 	valAsbytes, err := stub.GetState(logName) //get the log from chaincode state
 	if err != nil {
 		jsonResp = "{\"Error\":\"Failed to get state for " + logName + "\"}"
@@ -272,14 +267,14 @@ func (t *SimpleChaincode) deleteLog(stub shim.ChaincodeStubInterface, args []str
 	}
 
 	// maintain the index
-	indexName := "account~name"
-	accountNameIndexKey, err := stub.CreateCompositeKey(indexName, []string{logJSON.Account, logJSON.Name})
+	indexName := "user~name"
+	userNameIndexKey, err := stub.CreateCompositeKey(indexName, []string{logJSON.User, logJSON.Name})
 	if err != nil {
 		return shim.Error(err.Error())
 	}
 
 	//  Delete index entry to state.
-	err = stub.DelState(accountNameIndexKey)
+	err = stub.DelState(userNameIndexKey)
 	if err != nil {
 		return shim.Error("Failed to delete state:" + err.Error())
 	}
@@ -332,3 +327,4 @@ func getQueryResultForQueryString(stub shim.ChaincodeStubInterface, queryString 
 
 	return buffer.Bytes(), nil
 }
+
