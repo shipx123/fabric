@@ -17,6 +17,61 @@ specific language governing permissions and limitations
 under the License.
 */
 
+// ====CHAINCODE EXECUTION SAMPLES (CLI) ==================
+
+// ==== Invoke marbles ====
+// peer chaincode invoke -C myc1 -n marbles -c '{"Args":["initMarble","marble1","blue","35","tom"]}'
+// peer chaincode invoke -C myc1 -n marbles -c '{"Args":["initMarble","marble2","red","50","tom"]}'
+// peer chaincode invoke -C myc1 -n marbles -c '{"Args":["initMarble","marble3","blue","70","tom"]}'
+// peer chaincode invoke -C myc1 -n marbles -c '{"Args":["transferMarble","marble2","jerry"]}'
+// peer chaincode invoke -C myc1 -n marbles -c '{"Args":["transferMarblesBasedOnColor","blue","jerry"]}'
+// peer chaincode invoke -C myc1 -n marbles -c '{"Args":["delete","marble1"]}'
+
+// ==== Query marbles ====
+// peer chaincode query -C myc1 -n marbles -c '{"Args":["readMarble","marble1"]}'
+// peer chaincode query -C myc1 -n marbles -c '{"Args":["getMarblesByRange","marble1","marble3"]}'
+// peer chaincode query -C myc1 -n marbles -c '{"Args":["getHistoryForMarble","marble1"]}'
+
+// Rich Query (Only supported if CouchDB is used as state database):
+//   peer chaincode query -C myc1 -n marbles -c '{"Args":["queryMarblesByOwner","tom"]}'
+//   peer chaincode query -C myc1 -n marbles -c '{"Args":["queryMarbles","{\"selector\":{\"owner\":\"tom\"}}"]}'
+
+//The following examples demonstrate creating indexes on CouchDB
+//Example hostname:port configurations
+//
+//Docker or vagrant environments:
+// http://couchdb:5984/
+//
+//Inside couchdb docker container
+// http://127.0.0.1:5984/
+
+// Index for chaincodeid, docType, owner.
+// Note that docType and owner fields must be prefixed with the "data" wrapper
+// chaincodeid must be added for all queries
+//
+// Definition for use with Fauxton interface
+// {"index":{"fields":["chaincodeid","data.docType","data.owner"]},"ddoc":"indexOwnerDoc", "name":"indexOwner","type":"json"}
+//
+// example curl definition for use with command line
+// curl -i -X POST -H "Content-Type: application/json" -d "{\"index\":{\"fields\":[\"chaincodeid\",\"data.docType\",\"data.owner\"]},\"name\":\"indexOwner\",\"ddoc\":\"indexOwnerDoc\",\"type\":\"json\"}" http://hostname:port/myc1/_index
+//
+
+// Index for chaincodeid, docType, owner, size (descending order).
+// Note that docType, owner and size fields must be prefixed with the "data" wrapper
+// chaincodeid must be added for all queries
+//
+// Definition for use with Fauxton interface
+// {"index":{"fields":[{"data.size":"desc"},{"chaincodeid":"desc"},{"data.docType":"desc"},{"data.owner":"desc"}]},"ddoc":"indexSizeSortDoc", "name":"indexSizeSortDesc","type":"json"}
+//
+// example curl definition for use with command line
+// curl -i -X POST -H "Content-Type: application/json" -d "{\"index\":{\"fields\":[{\"data.size\":\"desc\"},{\"chaincodeid\":\"desc\"},{\"data.docType\":\"desc\"},{\"data.owner\":\"desc\"}]},\"ddoc\":\"indexSizeSortDoc\", \"name\":\"indexSizeSortDesc\",\"type\":\"json\"}" http://hostname:port/myc1/_index
+
+// Rich Query with index design doc and index name specified (Only supported if CouchDB is used as state database):
+//   peer chaincode query -C myc1 -n marbles -c '{"Args":["queryMarbles","{\"selector\":{\"docType\":\"marble\",\"owner\":\"tom\"}, \"use_index\":[\"_design/indexOwnerDoc\", \"indexOwner\"]}"]}'
+
+// Rich Query with index design doc specified only (Only supported if CouchDB is used as state database):
+//   peer chaincode query -C myc1 -n marbles -c '{"Args":["queryMarbles","{\"selector\":{\"docType\":{\"$eq\":\"marble\"},\"owner\":{\"$eq\":\"tom\"},\"size\":{\"$gt\":0}},\"fields\":[\"docType\",\"owner\",\"size\"],\"sort\":[{\"size\":\"desc\"}],\"use_index\":\"_design/indexSizeSortDoc\"}"]}'
+
 package main
 
 import (
@@ -73,7 +128,7 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 	} else if function == "deleteItem" { //delete a item
 		return t.deleteItem(stub, args)
 	} else if function == "queryItemsByItemPropertyOwner" { //find items for owner X using rich query
-		return t.queryItemsByOwner(stub, args)
+		return t.queryItemsByItemPropertyOwner(stub, args)
 	} else if function == "initUser" { //create a new user
 		return t.initUser(stub, args)
 	}
@@ -379,26 +434,36 @@ func (t *SimpleChaincode) queryItemsByItemPropertyOwner(stub shim.ChaincodeStubI
 	//   0                1                    2
 	// "IPR", "Intellectual property right", "tom"
 
+	var err error
+	if len(args) < 3 {
+		return shim.Error("Incorrect number of arguments. Expecting 3")
+	}
 	if len(args[2]) <= 0 {
 		return shim.Error("3rd argument must be a non-empty string")
 	} else if len(args[0]) <= 0 {
 		if len(args[1]) <= 0 {
-			return t.queryItemsByOwner(stub, args)
+			arg := make([]string, 1)
+			arg[0] = args[2]
+			return t.queryItemsByOwner(stub, arg)
 		} else {
-			return t.queryItemsByPropertyOwner(stub, args)
+			arg := make([]string, 2)
+			arg[0] = args[1]
+			arg[1] = args[2]
+			return t.queryItemsByPropertyOwner(stub, arg)
 		}
 	} else if len(args[1]) <= 0 {
-			return t.queryItemsByItemOwner(stub, args)
+			arg := make([]string, 2)
+			arg[0] = args[0]
+			arg[1] = args[2]
+			return t.queryItemsByItemOwner(stub, arg)
 		}
 		
-	if len(args) < 3 {
-		return shim.Error("Incorrect number of arguments. Expecting 3")
-	}
+
 	item := args[0]
 	property := args[1]
 	owner := args[2]
 
-	queryString := fmt.Sprintf("{\"selector\":{\"docType\":\"item\",\"item\":\"%s\",\"property\":\"%s\",\"owner\":\"%s\"}}", item, property, owner)
+	queryString := fmt.Sprintf("{\"selector\":{\"docType\":\"item\",\"name\":\"%s\",\"property\":\"%s\",\"owner\":\"%s\"}}", item, property, owner)
 
 	queryResults, err := getQueryResultForQueryString(stub, queryString)
 	if err != nil {
@@ -475,7 +540,7 @@ func (t *SimpleChaincode) queryItemsByItemOwner(stub shim.ChaincodeStubInterface
 	item := args[0]
 	owner := args[1]
 
-	queryString := fmt.Sprintf("{\"selector\":{\"docType\":\"item\",\"item\":\"%s\",\"owner\":\"%s\"}}", item, owner)
+	queryString := fmt.Sprintf("{\"selector\":{\"docType\":\"item\",\"name\":\"%s\",\"owner\":\"%s\"}}", item, owner)
 
 	queryResults, err := getQueryResultForQueryString(stub, queryString)
 	if err != nil {
@@ -529,3 +594,4 @@ func getQueryResultForQueryString(stub shim.ChaincodeStubInterface, queryString 
 
 	return buffer.Bytes(), nil
 }
+
