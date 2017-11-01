@@ -370,46 +370,40 @@ func (t *SimpleChaincode) queryBalance(stub shim.ChaincodeStubInterface, args []
 }
 
 // =========================================================================================
-// queryItemsByItemPropertyOwner queries for items based on a passed in item, property and owner.
+// queryItemsByItemPropertyOwner queries for items based on a passed in item and owner.
 // This is an example of a parameterized query where the query logic is baked into the chaincode,
-// and accepting three query parameters (item, property, owner).
+// and accepting three query parameters (item, owner).
 // Only available on state databases that support rich query (e.g. CouchDB)
 // =========================================================================================
-func (t *SimpleChaincode) queryItemsByItemPropertyOwner(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+func (t *SimpleChaincode) queryItemsByItemOwner(stub shim.ChaincodeStubInterface, args []string) pb.Response {
 
-	//   0                1                    2
-	// "IPR", "Intellectual property right", "tom"
+	//   0      1 
+	// "IPR", "tom"
 
 	var err error
-	if len(args) < 3 {
-		return shim.Error("Incorrect number of arguments. Expecting 3")
+	if len(args) < 2 {
+		return shim.Error("Incorrect number of arguments. Expecting 2")
 	}
-	if len(args[2]) <= 0 {
-		return shim.Error("3rd argument must be a non-empty string")
-	} else if len(args[0]) <= 0 {
+
 		if len(args[1]) <= 0 {
+			if len(args[0]) <= 0 {
+				return shim.Error("Arguments can't be null. At least 1")
+			} else {
 			arg := make([]string, 1)
-			arg[0] = args[2]
-			return t.queryItemsByOwner(stub, arg)
-		} else {
-			arg := make([]string, 2)
-			arg[0] = args[1]
-			arg[1] = args[2]
-			return t.queryItemsByPropertyOwner(stub, arg)
-		}
-	} else if len(args[1]) <= 0 {
-			arg := make([]string, 2)
 			arg[0] = args[0]
-			arg[1] = args[2]
-			return t.queryItemsByItemOwner(stub, arg)
+			return t.queryItemsByItem(stub, arg)
+			}
 		}
-		
+		else if len(args[0]) <= 0 {
+			arg := make([]string, 1)
+			arg[0] = args[1]
+			return t.queryItemsByOwner(stub, arg)
+		}
 
 	item := args[0]
-	property := args[1]
-	owner := args[2]
+	owner := args[1]
 
-	queryString := fmt.Sprintf("{\"selector\":{\"docType\":\"item\",\"name\":\"%s\",\"property\":\"%s\",\"owner\":\"%s\"}}", item, property, owner)
+	queryString := fmt.Sprintf("{\"selector\":{\"docType\":\"item\",\"name\":\"%s\",\"owner\":\"%s\"}}", item, owner)
 
 	queryResults, err := getQueryResultForQueryString(stub, queryString)
 	if err != nil {
@@ -417,6 +411,27 @@ func (t *SimpleChaincode) queryItemsByItemPropertyOwner(stub shim.ChaincodeStubI
 	}
 	return shim.Success(queryResults)
 }
+
+func (t *SimpleChaincode) queryItemsByItem(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+
+	//   0
+	// "IPR"
+	if len(args) < 1 {
+		return shim.Error("Incorrect number of arguments. Expecting 1")
+	}
+
+	item := args[0]
+
+	queryString := fmt.Sprintf("{\"selector\":{\"docType\":\"item\",\"name\":\"%s\"}}", item)
+
+	queryResults, err := getQueryResultForQueryString(stub, queryString)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+	return shim.Success(queryResults)
+}
+
+
 
 // =========================================================================================
 // queryItemsByOwner queries for items based on a passed in owner.
@@ -443,57 +458,6 @@ func (t *SimpleChaincode) queryItemsByOwner(stub shim.ChaincodeStubInterface, ar
 	return shim.Success(queryResults)
 }
 
-// =========================================================================================
-// queryItemsByPropertyOwner queries for items based on a passed in property and owner.
-// This is an example of a parameterized query where the query logic is baked into the chaincode,
-// and accepting two query parameters (property, owner).
-// Only available on state databases that support rich query (e.g. CouchDB)
-// =========================================================================================
-func (t *SimpleChaincode) queryItemsByPropertyOwner(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-
-	//              0                   1 
-	// "Intellectual property right", "tom"
-	if len(args) < 2 {
-		return shim.Error("Incorrect number of arguments. Expecting 2")
-	}
-
-	property := args[0]
-	owner := args[1]
-
-	queryString := fmt.Sprintf("{\"selector\":{\"docType\":\"item\",\"property\":\"%s\",\"owner\":\"%s\"}}", property, owner)
-
-	queryResults, err := getQueryResultForQueryString(stub, queryString)
-	if err != nil {
-		return shim.Error(err.Error())
-	}
-	return shim.Success(queryResults)
-}
-
-// =========================================================================================
-// queryItemsByItemOwner queries for items based on a passed in item and owner.
-// This is an example of a parameterized query where the query logic is baked into the chaincode,
-// and accepting two query parameters (item, owner).
-// Only available on state databases that support rich query (e.g. CouchDB)
-// =========================================================================================
-func (t *SimpleChaincode) queryItemsByItemOwner(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-
-	//   0      1
-	// "IPR", "tom"
-	if len(args) < 2 {
-		return shim.Error("Incorrect number of arguments. Expecting 2")
-	}
-
-	item := args[0]
-	owner := args[1]
-
-	queryString := fmt.Sprintf("{\"selector\":{\"docType\":\"item\",\"name\":\"%s\",\"owner\":\"%s\"}}", item, owner)
-
-	queryResults, err := getQueryResultForQueryString(stub, queryString)
-	if err != nil {
-		return shim.Error(err.Error())
-	}
-	return shim.Success(queryResults)
-}
 
 // =========================================================================================
 // getQueryResultForQueryString executes the passed in query string.
